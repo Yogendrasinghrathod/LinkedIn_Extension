@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; width: 320px; padding: 10px; }
+    button { margin: 6px 0; padding: 10px; width: 100%; border: none; background-color: #0073b1; color: white; cursor: pointer; border-radius: 4px; }
+    button:hover { background-color: #005580; }
+    #loading { font-style: italic; color: gray; }
+  </style>
+</head>
+<body>
+  <h3>GPT Suggested Replies</h3>
+  <div id="loading">Loading last message...</div>
+  <div id="lastMessage" style="font-weight:bold; margin-bottom:10px;"></div>
+  <div id="suggestions"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

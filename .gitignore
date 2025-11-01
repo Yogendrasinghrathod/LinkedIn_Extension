@@ -1,0 +1,28 @@
+# API Keys and sensitive files
+*.env
+.env
+.env.local
+.env.*.local
+
+# Node modules (if you added any build tools)
+node_modules/
+package-lock.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temporary files
+*.tmp
+*.temp
+
