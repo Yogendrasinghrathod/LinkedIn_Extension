@@ -6,17 +6,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return;
       }
       
-      // Check if we're on a LinkedIn messaging page
       const linkedInMessagingUrl = tabs[0].url && tabs[0].url.includes('linkedin.com/messaging');
       if (!linkedInMessagingUrl) {
         sendResponse({ lastMessage: '' });
         return;
       }
 
-      // Add timeout for message sending
       const timeout = setTimeout(() => {
         sendResponse({ lastMessage: '' });
-      }, 14000); // 14 second timeout (slightly less than popup timeout)
+      }, 14000);
 
       chrome.tabs.sendMessage(tabs[0].id, { action: 'getLastMessage' }, (response) => {
         clearTimeout(timeout);
@@ -28,6 +26,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
       });
     });
-    return true; // Will respond asynchronously
+    return true;
   }
 });

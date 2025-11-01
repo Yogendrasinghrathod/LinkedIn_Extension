@@ -1,8 +1,4 @@
-// IMPORTANT: Replace 'YOUR_API_KEY_HERE' with your actual Gemini API key
-// Get your API key from: https://aistudio.google.com/app/apikey
-// Make sure you have access to the Gemini API
 const geminiApiKey = 'YOUR_API_KEY_HERE';
-
 
 const loadingEl = document.getElementById('loading');
 const lastMessageEl = document.getElementById('lastMessage');
@@ -10,10 +6,9 @@ const suggestionsContainer = document.getElementById('suggestions');
 
 async function fetchLastLinkedInMessage() {
   return new Promise((resolve, reject) => {
-    // Add timeout to prevent hanging
     const timeout = setTimeout(() => {
       reject(new Error('Timeout: Message extraction took too long'));
-    }, 15000); // 15 second timeout
+    }, 15000);
 
     chrome.runtime.sendMessage({ action: 'fetchLastMessage' }, (response) => {
       clearTimeout(timeout);
@@ -35,7 +30,6 @@ async function listAvailableModels(apiVersion = 'v1beta') {
       return data.models || [];
     }
   } catch (error) {
-    // Silently fail and use fallback models
   }
   return [];
 }
@@ -43,12 +37,10 @@ async function listAvailableModels(apiVersion = 'v1beta') {
 async function fetchGeminiReplies(lastMessage) {
   const prompt = `You received this LinkedIn message:\n"${lastMessage}"\n\nProvide 5 polite and professional reply suggestions for this message. Format each suggestion on a new line.`;
 
-  // Get available models dynamically
   let availableModels = [];
   try {
     availableModels = await listAvailableModels('v1beta');
   } catch (e) {
-    // Use fallback models
   }
 
   const workingModels = availableModels
