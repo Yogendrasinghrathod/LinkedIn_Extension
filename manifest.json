@@ -1,7 +1,8 @@
 {
   "manifest_version": 3,
   "name": "LinkedIn DM GPT Reply Helper",
-  "version": "1.1",
+  "version": "1.2",
+  "description": "Generate professional reply suggestions for LinkedIn messages using Google Gemini AI",
   "permissions": ["storage", "scripting", "activeTab"],
   "host_permissions": [
     "https://www.linkedin.com/*",
@@ -15,6 +16,7 @@
       "128": "business.png"
     }
   },
+  "options_page": "settings.html",
   "background": {
     "service_worker": "background.js"
   },
@@ -25,5 +27,10 @@
       "run_at": "document_idle",
       "all_frames": false
     }
-  ]
+  ],
+  "icons": {
+    "16": "business.png",
+    "48": "business.png",
+    "128": "business.png"
+  }
 }

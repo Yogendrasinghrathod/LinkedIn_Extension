@@ -1,0 +1,22 @@
+{
+  "id": 4,
+  "title": "LinkedIn DM GPT Reply Helper",
+  "description": "A Chrome extension that intelligently generates professional reply suggestions for LinkedIn messages using Google Gemini AI. The extension automatically extracts the last message from active LinkedIn conversations and provides 5 contextually appropriate, polite, and professional reply options. Built with vanilla JavaScript, it features a clean popup interface, robust message extraction using multiple DOM parsing strategies, and seamless integration with Google's Gemini API. The extension includes intelligent content script injection, retry mechanisms for reliable message extraction, and one-click copy-to-clipboard functionality for quick responses. It handles LinkedIn's dynamic content loading, supports multiple message format variations, and includes comprehensive error handling for API failures, network issues, and content extraction challenges.",
+  "image": "/projects/linkedinExtension.png",
+  "tags": [
+    "Chrome Extension",
+    "JavaScript",
+    "Google Gemini AI",
+    "LinkedIn Integration",
+    "Content Scripts",
+    "Background Scripts",
+    "DOM Parsing",
+    "API Integration",
+    "Message Extraction",
+    "Natural Language Processing",
+    "Professional Communication",
+    "Manifest V3"
+  ],
+  "demoUrl": "https://chrome.google.com/webstore",
+  "githubUrl": "https://github.com/Yogendrasinghrathod/LinedInExtension"
+}

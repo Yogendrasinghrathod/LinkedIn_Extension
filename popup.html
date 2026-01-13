@@ -2,14 +2,35 @@
 <html>
 <head>
   <style>
-    body { font-family: Arial, sans-serif; width: 320px; padding: 10px; }
-    button { margin: 6px 0; padding: 10px; width: 100%; border: none; background-color: #0073b1; color: white; cursor: pointer; border-radius: 4px; }
-    button:hover { background-color: #005580; }
+    body { font-family: Arial, sans-serif; width: 320px; padding: 10px; margin: 0; }
+    .reply-btn { 
+      margin: 6px 0; 
+      padding: 10px; 
+      width: 100%; 
+      border: none; 
+      background-color: #0073b1; 
+      color: white; 
+      cursor: pointer; 
+      border-radius: 4px; 
+      text-align: left; 
+      word-wrap: break-word; 
+      white-space: normal;
+      display: block;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    .reply-btn:hover { background-color: #005580; }
     #loading { font-style: italic; color: gray; }
+    #suggestions { margin-top: 10px; }
   </style>
 </head>
 <body>
-  <h3>GPT Suggested Replies</h3>
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+    <h3 style="margin: 0;">GPT Suggested Replies</h3>
+    <button id="settingsBtn" style="background: none; border: none; cursor: pointer; padding: 5px; font-size: 18px;" title="Settings">
+      ⚙️
+    </button>
+  </div>
   <div id="loading">Loading last message...</div>
   <div id="lastMessage" style="font-weight:bold; margin-bottom:10px;"></div>
   <div id="suggestions"></div>

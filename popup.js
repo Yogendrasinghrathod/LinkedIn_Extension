@@ -1,4 +1,18 @@
-const geminiApiKey = 'YOUR_API_KEY_HERE';
+// API Key Configuration - Load from Chrome storage
+let geminiApiKey = null;
+
+// Load API key from Chrome storage
+function loadApiKey() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(['geminiApiKey'], (result) => {
+      geminiApiKey = result.geminiApiKey || null;
+      resolve(geminiApiKey);
+    });
+  });
+}
+
+// Load API key on startup
+loadApiKey();
 
 const loadingEl = document.getElementById('loading');
 const lastMessageEl = document.getElementById('lastMessage');
@@ -7,23 +21,32 @@ const suggestionsContainer = document.getElementById('suggestions');
 async function fetchLastLinkedInMessage() {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
-      reject(new Error('Timeout: Message extraction took too long'));
+      reject(new Error('Timeout: Message extraction took too long. The content script may not be responding.'));
     }, 15000);
 
     chrome.runtime.sendMessage({ action: 'fetchLastMessage' }, (response) => {
       clearTimeout(timeout);
       if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
+        const errorMsg = chrome.runtime.lastError.message;
+        console.error('Background script error:', errorMsg);
+        reject(new Error(`Background script error: ${errorMsg}`));
+      } else if (response && response.lastMessage !== undefined) {
+        resolve(response.lastMessage || '');
       } else {
-        resolve(response?.lastMessage || '');
+        reject(new Error('No response from background script. Make sure you are on a LinkedIn messaging page.'));
       }
     });
   });
 }
 
-async function listAvailableModels(apiVersion = 'v1beta') {
+async function listAvailableModels(apiVersion = 'v1beta', apiKey = null) {
+  if (!apiKey) {
+    await loadApiKey();
+    apiKey = geminiApiKey;
+  }
+  const key = apiKey;
   try {
-    const listUrl = `https://generativelanguage.googleapis.com/${apiVersion}/models?key=${geminiApiKey}`;
+    const listUrl = `https://generativelanguage.googleapis.com/${apiVersion}/models?key=${key}`;
     const response = await fetch(listUrl);
     if (response.ok) {
       const data = await response.json();
@@ -34,12 +57,21 @@ async function listAvailableModels(apiVersion = 'v1beta') {
   return [];
 }
 
-async function fetchGeminiReplies(lastMessage) {
-  const prompt = `You received this LinkedIn message:\n"${lastMessage}"\n\nProvide 5 polite and professional reply suggestions for this message. Format each suggestion on a new line.`;
+async function fetchGeminiReplies(lastMessage, apiKey = null) {
+  if (!apiKey) {
+    await loadApiKey();
+    apiKey = geminiApiKey;
+  }
+  const key = apiKey;
+  if (!key || key.trim() === '') {
+    throw new Error('API_KEY_INVALID: API key not configured. Please open settings to configure your API key.');
+  }
+
+  const prompt = `You received this LinkedIn message:\n"${lastMessage}"\n\nProvide exactly 5 polite and professional reply suggestions for this message. Format each suggestion on a separate line, numbered 1-5. Each reply should be complete and ready to send. Do not include any explanations or additional text, just the 5 reply suggestions.`;
 
   let availableModels = [];
   try {
-    availableModels = await listAvailableModels('v1beta');
+    availableModels = await listAvailableModels('v1beta', key);
   } catch (e) {
   }
 
@@ -61,7 +93,7 @@ async function fetchGeminiReplies(lastMessage) {
   
   for (const [model, apiVersion] of modelConfigs) {
     try {
-      return await tryGeminiModel(model, prompt, apiVersion);
+      return await tryGeminiModel(model, prompt, apiVersion, key);
     } catch (error) {
       if (error.message.includes('MODEL_NOT_FOUND') || error.message.includes('not found') || error.message.includes('not supported')) {
         continue;
@@ -75,9 +107,14 @@ async function fetchGeminiReplies(lastMessage) {
   throw new Error('API_MODEL_NOT_FOUND: No working Gemini models found. Please check your API key.');
 }
 
-async function tryGeminiModel(model, prompt, apiVersion = 'v1beta') {
+async function tryGeminiModel(model, prompt, apiVersion = 'v1beta', apiKey = null) {
+  if (!apiKey) {
+    await loadApiKey();
+    apiKey = geminiApiKey;
+  }
+  const key = apiKey;
   try {
-    const apiUrl = `https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${geminiApiKey}`;
+    const apiUrl = `https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${key}`;
     
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -169,23 +206,82 @@ async function tryGeminiModel(model, prompt, apiVersion = 'v1beta') {
       throw new Error('API_RESPONSE_INVALID: Could not extract text from response.');
     }
 
-    let replies = geminiText
-      .split(/\n+|•|[-*]\s+/)
-      .map(s => s.trim())
-      .filter(line => line.length > 10 && !line.match(/^(suggestion|reply|option)\s*\d*:?$/i));
+    console.log('Raw Gemini response:', geminiText.substring(0, 200) + '...');
     
+    // Try multiple parsing strategies
+    let replies = [];
+    
+    // Strategy 1: Split by newlines, bullets, or dashes
+    replies = geminiText
+      .split(/\n+|•|[-*]\s+|^\d+[\.\)]\s+/m)
+      .map(s => s.trim())
+      .filter(line => {
+        // Filter out empty lines, short lines, and header text
+        if (line.length < 10) return false;
+        if (line.match(/^(suggestion|reply|option|here are|here's)\s*\d*:?$/i)) return false;
+        if (line.match(/^(please|thank|here|below)/i) && line.length < 30) return false;
+        return true;
+      });
+    
+    console.log('Parsed replies (strategy 1):', replies.length, replies);
+    
+    // Strategy 2: If we don't have enough, try splitting by sentences
     if (replies.length < 3) {
-      replies = geminiText
+      const sentences = geminiText
         .match(/[^\.!\?]+[\.!\?]+/g)
         ?.map(s => s.trim())
-        .filter(s => s.length > 10) || [];
+        .filter(s => s.length > 15 && !s.match(/^(suggestion|reply|option)/i)) || [];
+      
+      if (sentences.length > replies.length) {
+        replies = sentences;
+        console.log('Using sentence-based parsing:', replies.length);
+      }
     }
     
+    // Strategy 3: If still empty, try splitting by numbered items
+    if (replies.length < 2) {
+      const numbered = geminiText
+        .split(/\d+[\.\)]\s+/)
+        .map(s => s.trim())
+        .filter(s => s.length > 10)
+        .slice(1); // Skip first item (usually before first number)
+      
+      if (numbered.length > 0) {
+        replies = numbered;
+        console.log('Using numbered parsing:', replies.length);
+      }
+    }
+    
+    // Strategy 4: Last resort - use the whole text as one reply, or split by double newlines
     if (replies.length === 0) {
-      replies = [geminiText.trim()];
+      const paragraphs = geminiText.split(/\n\n+/).map(s => s.trim()).filter(s => s.length > 10);
+      if (paragraphs.length > 0) {
+        replies = paragraphs;
+      } else {
+        replies = [geminiText.trim()];
+      }
+      console.log('Using fallback parsing:', replies.length);
     }
 
-    return replies.slice(0, 5).filter(r => r.length > 5);
+    // Clean up replies - remove common prefixes and ensure minimum length
+    replies = replies
+      .map(r => {
+        // Remove common prefixes like "1. ", "Reply 1: ", etc.
+        r = r.replace(/^\d+[\.\)]\s*/, '');
+        r = r.replace(/^(reply|suggestion|option)\s*\d*:?\s*/i, '');
+        r = r.replace(/^[-*•]\s*/, '');
+        return r.trim();
+      })
+      .filter(r => r.length > 5)
+      .slice(0, 5);
+
+    console.log('Final replies:', replies.length, replies);
+    
+    if (replies.length === 0) {
+      throw new Error('API_RESPONSE_INVALID: No valid replies could be extracted from response.');
+    }
+
+    return replies;
   } catch (error) {
     if (error.message.includes('MODEL_NOT_FOUND')) throw error;
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
@@ -198,8 +294,32 @@ async function tryGeminiModel(model, prompt, apiVersion = 'v1beta') {
 
 async function loadReplies() {
   try {
+    // Load API key from storage
+    await loadApiKey();
+    
+    // Check if API key is configured
+    if (!geminiApiKey || geminiApiKey.trim() === '') {
+      loadingEl.style.display = 'none';
+      lastMessageEl.textContent = 'API Key Not Configured';
+      suggestionsContainer.innerHTML = `
+        <p style="color: #d32f2f; margin-bottom: 10px;">Please configure your Gemini API key.</p>
+        <p style="font-size: 12px; margin-bottom: 10px;">Click the settings button below to add your API key.</p>
+        <button id="openSettings" style="padding: 8px 16px; background-color: #0073b1; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%;">
+          Open Settings
+        </button>
+      `;
+      
+      // Add click handler for settings button
+      document.getElementById('openSettings')?.addEventListener('click', () => {
+        chrome.runtime.openOptionsPage();
+      });
+      return;
+    }
+
     lastMessageEl.textContent = 'Reading message from LinkedIn...';
+    console.log('Starting message extraction...');
     const lastMessage = await fetchLastLinkedInMessage();
+    console.log('Message extracted:', lastMessage ? lastMessage.substring(0, 50) + '...' : 'empty');
     loadingEl.style.display = 'none';
     
     if (!lastMessage) {
@@ -211,9 +331,25 @@ async function loadReplies() {
     lastMessageEl.textContent = `Last message: "${lastMessage.substring(0, 100)}${lastMessage.length > 100 ? '...' : ''}"`;
     suggestionsContainer.textContent = 'Loading Gemini suggestions...';
 
+    // Ensure API key is loaded
+    await loadApiKey();
+    console.log('Fetching Gemini replies for message:', lastMessage.substring(0, 50) + '...');
     const replies = await fetchGeminiReplies(lastMessage);
+    console.log('Received replies:', replies);
+    
+    if (!replies || replies.length === 0) {
+      lastMessageEl.textContent = `Last message: "${lastMessage.substring(0, 100)}${lastMessage.length > 100 ? '...' : ''}"`;
+      suggestionsContainer.innerHTML = `
+        <p style="color: #d32f2f; margin-bottom: 10px;">No reply suggestions were generated.</p>
+        <p style="font-size: 12px;">The API returned an empty response. Please try again.</p>
+      `;
+      return;
+    }
+    
     suggestionsContainer.innerHTML = '';
-    replies.forEach(reply => {
+    replies.forEach((reply, index) => {
+      if (!reply || reply.trim().length === 0) return;
+      
       const btn = document.createElement('button');
       btn.textContent = reply;
       btn.classList.add('reply-btn');
@@ -223,14 +359,32 @@ async function loadReplies() {
           .catch(() => alert('Failed to copy reply'));
       });
       suggestionsContainer.appendChild(btn);
+      console.log(`Added reply button ${index + 1}:`, reply.substring(0, 50) + '...');
     });
+    
+    if (suggestionsContainer.children.length === 0) {
+      suggestionsContainer.innerHTML = `
+        <p style="color: #d32f2f; margin-bottom: 10px;">No valid suggestions could be displayed.</p>
+        <p style="font-size: 12px;">Check the console (F12) for details.</p>
+      `;
+    }
   } catch (e) {
     loadingEl.style.display = 'none';
     const errorMessage = e.message || 'Unknown error';
+    console.error('Error in loadReplies:', e);
     
-    if (errorMessage.includes('Timeout')) {
+    if (errorMessage.includes('Timeout') || errorMessage.includes('took too long')) {
       lastMessageEl.textContent = 'Message extraction timed out.';
-      suggestionsContainer.textContent = 'LinkedIn may still be loading. Please wait a few seconds and try again, or refresh the LinkedIn page.';
+      suggestionsContainer.innerHTML = `
+        <p style="color: #d32f2f; margin-bottom: 10px;">The extension couldn't extract the message from LinkedIn.</p>
+        <p style="font-size: 12px;">Try:</p>
+        <ul style="font-size: 12px; margin-left: 20px;">
+          <li>Make sure you're on a LinkedIn messaging page with an open conversation</li>
+          <li>Wait a few seconds for the page to fully load, then try again</li>
+          <li>Refresh the LinkedIn page and try again</li>
+          <li>Check the browser console (F12) for errors</li>
+        </ul>
+      `;
     } else if (errorMessage.includes('API_KEY_INVALID')) {
       lastMessageEl.textContent = 'Invalid Gemini API Key.';
       suggestionsContainer.innerHTML = `
@@ -260,6 +414,17 @@ async function loadReplies() {
         <p style="color: #d32f2f; margin-bottom: 10px;">No working Gemini models found.</p>
         <p style="font-size: 12px;">Verify your API key at <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a> and ensure the Gemini API is enabled.</p>
       `;
+    } else if (errorMessage.includes('Background script error') || errorMessage.includes('No response from background')) {
+      lastMessageEl.textContent = 'Communication Error.';
+      suggestionsContainer.innerHTML = `
+        <p style="color: #d32f2f; margin-bottom: 10px;">Could not communicate with the extension.</p>
+        <p style="font-size: 12px;">Try:</p>
+        <ul style="font-size: 12px; margin-left: 20px;">
+          <li>Make sure you're on a LinkedIn messaging page (linkedin.com/messaging)</li>
+          <li>Reload the extension in chrome://extensions/</li>
+          <li>Refresh the LinkedIn page and try again</li>
+        </ul>
+      `;
     } else if (errorMessage.includes('API_')) {
       lastMessageEl.textContent = 'Gemini API Error.';
       suggestionsContainer.innerHTML = `
@@ -268,10 +433,18 @@ async function loadReplies() {
       `;
     } else {
       lastMessageEl.textContent = 'Error occurred.';
-      suggestionsContainer.textContent = errorMessage;
+      suggestionsContainer.innerHTML = `
+        <p style="color: #d32f2f; margin-bottom: 10px;">${errorMessage}</p>
+        <p style="font-size: 12px;">Check the browser console (F12) for more details.</p>
+      `;
     }
   }
 }
+
+// Add settings button handler
+document.getElementById('settingsBtn')?.addEventListener('click', () => {
+  chrome.runtime.openOptionsPage();
+});
 
 loadReplies();
 
